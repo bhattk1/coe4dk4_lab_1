@@ -1,4 +1,4 @@
-COE4DK4 Lab 1 — Performance of Single Server Queueing Systems
+COE4DK4 Lab 1 - Performance of Single Server Queueing Systems
 Group Setup
 
 This repository contains the code, experiment results, plots, and report material for COE4DK4 Lab 1: Performance of Single Server Queueing Systems.
