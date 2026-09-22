@@ -25,6 +25,7 @@
 
 #include <stdio.h>
 #include "simlib.h"
+#include <stdlib.h> // The finite queue will store arrival times dynamically
 
 /*******************************************************************************/
 
@@ -35,7 +36,6 @@
 // #define RANDOM_SEED 5259140
 // #define NUMBER_TO_SERVE 10e2
 
-// #define SERVICE_TIME 1
 #define ARRIVAL_RATE 0.1
 
 #define BLIP_RATE 10000
@@ -44,6 +44,10 @@
  * Student num ends in 7, thus service time = 1+7 
  */
 #define SERVICE_TIME 8.0
+/*
+ * Part 4 requires the service time to be doubled.
+ */
+#define PART4_SERVICE_TIME (2.0 * SERVICE_TIME)
 
 /*
  * Five random seeds are used so that we can examine
@@ -76,6 +80,23 @@ typedef struct {
 
 } SimulationResult;
 
+typedef struct
+{
+    double utilization;
+    double mean_number;
+    double mean_delay;
+    double rejection_probability;
+
+    double final_clock;
+
+    long total_arrived;
+    long total_rejected;
+    long total_served;
+
+    int final_number_in_system;
+
+} FiniteQueueResult;
+
 /*******************************************************************************/
 
 /*
@@ -97,7 +118,8 @@ typedef struct {
 SimulationResult run_simulation(
     unsigned random_seed,
     long int number_to_serve,
-    double arrival_rate
+    double arrival_rate,
+    double service_time
 )
 {
     double clock = 0.0;
@@ -193,7 +215,7 @@ SimulationResult run_simulation(
             if (number_in_system == 1)
             {
                 next_departure_time =
-                    clock + SERVICE_TIME;
+                    clock + service_time;
             }
         }
 
@@ -227,7 +249,7 @@ SimulationResult run_simulation(
              * Server was busy for exactly SERVICE_TIME.
              */
 
-            total_busy_time += SERVICE_TIME;
+            total_busy_time += service_time;
 
             /*
              * If another customer is waiting,
@@ -237,7 +259,7 @@ SimulationResult run_simulation(
             if (number_in_system > 0)
             {
                 next_departure_time =
-                    clock + SERVICE_TIME;
+                    clock + service_time;
             }
         }
     }
@@ -272,6 +294,613 @@ SimulationResult run_simulation(
 
     result.final_number_in_system =
         number_in_system;
+
+    return result;
+}
+
+/*******************************************************************************/
+
+/*
+ * run_simulation_mm1()
+ *
+ * Runs one M/M/1 simulation.
+ *
+ * Arrivals are Poisson, exactly as in the M/D/1 simulator.
+ *
+ * The difference is the service time:
+ *
+ * M/D/1:
+ *      service time = SERVICE_TIME
+ *
+ * M/M/1:
+ *      service time is exponentially distributed
+ *      with mean SERVICE_TIME.
+ */
+
+SimulationResult run_simulation_mm1(
+    unsigned random_seed,
+    long int number_to_serve,
+    double arrival_rate,
+    double service_time
+)
+{
+    double clock = 0.0;
+
+    /*
+     * System state variables.
+     */
+
+    int number_in_system = 0;
+
+    double next_arrival_time = 0.0;
+    double next_departure_time = 0.0;
+
+    /*
+     * For M/M/1 we must remember the actual
+     * randomly generated service time of the
+     * customer currently being served.
+     */
+
+    double current_service_time = 0.0;
+
+    /*
+     * Data collection variables.
+     */
+
+    long int total_served = 0;
+    long int total_arrived = 0;
+
+    double total_busy_time = 0.0;
+    double integral_of_n = 0.0;
+    double last_event_time = 0.0;
+
+    SimulationResult result;
+
+    /*
+     * Initialize random number generator.
+     */
+
+    random_generator_initialize(random_seed);
+
+    /*
+     * Run simulation until the required number
+     * of customers have been served.
+     */
+
+    while (total_served < number_to_serve)
+    {
+        /*
+         * Determine whether the next event is
+         * an arrival or departure.
+         */
+
+        if (
+            number_in_system == 0 ||
+            next_arrival_time < next_departure_time
+        )
+        {
+            /***********************************************************/
+            /*
+             * ARRIVAL EVENT
+             */
+
+            clock = next_arrival_time;
+
+            /*
+             * Generate next arrival.
+             *
+             * Arrivals are still a Poisson process,
+             * therefore inter-arrival times are exponential.
+             */
+
+            next_arrival_time =
+                clock +
+                exponential_generator(1.0 / arrival_rate);
+
+            /*
+             * Update integral of number in system.
+             */
+
+            integral_of_n +=
+                number_in_system *
+                (clock - last_event_time);
+
+            last_event_time = clock;
+
+            /*
+             * Customer enters system.
+             */
+
+            number_in_system++;
+            total_arrived++;
+
+            /*
+             * If server was idle, begin service immediately.
+             *
+             * THIS is the important Part 3 modification.
+             *
+             * Instead of:
+             *
+             * current_service_time = SERVICE_TIME;
+             *
+             * we generate an exponentially distributed
+             * service time whose mean is SERVICE_TIME.
+             */
+
+            if (number_in_system == 1)
+            {
+                current_service_time =
+                    exponential_generator(
+                        (double) service_time
+                    );
+
+                next_departure_time =
+                    clock +
+                    current_service_time;
+            }
+        }
+
+        else
+        {
+            /***********************************************************/
+            /*
+             * DEPARTURE EVENT
+             */
+
+            clock = next_departure_time;
+
+            /*
+             * Update statistics.
+             */
+
+            integral_of_n +=
+                number_in_system *
+                (clock - last_event_time);
+
+            last_event_time = clock;
+
+            /*
+             * Customer leaves.
+             */
+
+            number_in_system--;
+            total_served++;
+
+            /*
+             * IMPORTANT:
+             *
+             * For M/D/1 we used:
+             *
+             * total_busy_time += SERVICE_TIME;
+             *
+             * We CANNOT do that here because each customer's
+             * service time is different.
+             *
+             * Add the actual randomly generated service time.
+             */
+
+            total_busy_time +=
+                current_service_time;
+
+            /*
+             * If customers are waiting, begin service
+             * for the next one.
+             *
+             * Generate a NEW exponential service time
+             * for every customer.
+             */
+
+            if (number_in_system > 0)
+            {
+                current_service_time =
+                    exponential_generator(
+                        (double) service_time
+                    );
+
+                next_departure_time =
+                    clock +
+                    current_service_time;
+            }
+        }
+    }
+
+    /******************************************************************/
+    /*
+     * Final statistics.
+     */
+
+    result.utilization =
+        total_busy_time / clock;
+
+    result.fraction_served =
+        (double) total_served /
+        (double) total_arrived;
+
+    result.mean_number =
+        integral_of_n / clock;
+
+    result.mean_delay =
+        integral_of_n /
+        (double) total_served;
+
+    result.final_clock =
+        clock;
+
+    result.total_arrived =
+        total_arrived;
+
+    result.total_served =
+        total_served;
+
+    result.final_number_in_system =
+        number_in_system;
+
+    return result;
+}
+
+/*******************************************************************************/
+
+/*
+ * run_simulation_finite_md1()
+ *
+ * Part 6 finite-capacity M/D/1 queue.
+ *
+ * MAX_QUEUE_SIZE counts customers WAITING in the queue.
+ *
+ * Therefore:
+ *
+ * total system capacity =
+ *
+ *      1 customer being served
+ *      +
+ *      MAX_QUEUE_SIZE customers waiting
+ *
+ * An arrival that finds all waiting positions occupied
+ * is rejected.
+ *
+ * Only customers that are eventually served are included
+ * in the mean-delay calculation.
+ */
+
+FiniteQueueResult run_simulation_finite_md1(
+    unsigned random_seed,
+    long int number_to_serve,
+    double arrival_rate,
+    double service_time,
+    int max_queue_size
+)
+{
+    double clock = 0.0;
+
+    int number_in_system = 0;
+
+    double next_arrival_time = 0.0;
+    double next_departure_time = 0.0;
+
+    long int total_arrived = 0;
+    long int total_rejected = 0;
+    long int total_served = 0;
+
+    double total_busy_time = 0.0;
+    double integral_of_n = 0.0;
+    double last_event_time = 0.0;
+
+    /*
+     * Unlike the original simulator, Part 6 explicitly says
+     * that only served customers should be included in the
+     * mean delay.
+     *
+     * Therefore we store the arrival time of every accepted
+     * customer and calculate its delay when it departs.
+     */
+
+    double total_delay_of_served = 0.0;
+
+    /*
+     * One customer may be in service, and
+     * max_queue_size customers may wait.
+     */
+
+    int system_capacity =
+        max_queue_size + 1;
+
+    /*
+     * Circular buffer containing arrival times of
+     * accepted customers.
+     */
+
+    double *arrival_times =
+        (double *) malloc(
+            system_capacity *
+            sizeof(double)
+        );
+
+    int queue_head = 0;
+    int queue_tail = 0;
+
+    FiniteQueueResult result;
+
+    if (arrival_times == NULL)
+    {
+        printf(
+            "ERROR: Could not allocate memory "
+            "for finite queue simulation.\n"
+        );
+
+        exit(EXIT_FAILURE);
+    }
+
+    /*
+     * Initialize random-number generator.
+     */
+
+    random_generator_initialize(
+        random_seed
+    );
+
+    /*
+     * Continue until NUMBER_TO_SERVE customers
+     * have actually completed service.
+     */
+
+    while (
+        total_served <
+        number_to_serve
+    )
+    {
+        /*
+         * Decide whether the next event is
+         * an arrival or departure.
+         */
+
+        if (
+            number_in_system == 0 ||
+            next_arrival_time <
+            next_departure_time
+        )
+        {
+            /**********************************************************/
+            /*
+             * ARRIVAL EVENT
+             */
+
+            clock =
+                next_arrival_time;
+
+            /*
+             * Generate next Poisson arrival.
+             */
+
+            next_arrival_time =
+                clock +
+                exponential_generator(
+                    1.0 /
+                    arrival_rate
+                );
+
+            /*
+             * Update time integral of N(t).
+             */
+
+            integral_of_n +=
+                number_in_system *
+                (
+                    clock -
+                    last_event_time
+                );
+
+            last_event_time =
+                clock;
+
+            /*
+             * Count EVERY attempted arrival,
+             * including rejected arrivals.
+             */
+
+            total_arrived++;
+
+            /*
+             * If:
+             *
+             * number_in_system ==
+             * max_queue_size + 1
+             *
+             * then there is:
+             *
+             * 1 customer in service
+             * +
+             * max_queue_size waiting
+             *
+             * so the queue is full.
+             */
+
+            if (
+                number_in_system >=
+                system_capacity
+            )
+            {
+                /*
+                 * Reject customer.
+                 *
+                 * They do NOT enter the system and
+                 * therefore contribute nothing to delay.
+                 */
+
+                total_rejected++;
+            }
+
+            else
+            {
+                /*
+                 * Customer is accepted.
+                 *
+                 * Save their arrival time.
+                 */
+
+                arrival_times[
+                    queue_tail
+                ] =
+                    clock;
+
+                queue_tail =
+                    (
+                        queue_tail + 1
+                    ) %
+                    system_capacity;
+
+                number_in_system++;
+
+                /*
+                 * If system was previously empty,
+                 * service starts immediately.
+                 */
+
+                if (
+                    number_in_system == 1
+                )
+                {
+                    next_departure_time =
+                        clock +
+                        service_time;
+                }
+            }
+        }
+
+        else
+        {
+            /**********************************************************/
+            /*
+             * DEPARTURE EVENT
+             */
+
+            clock =
+                next_departure_time;
+
+            /*
+             * Update time integral of N(t).
+             */
+
+            integral_of_n +=
+                number_in_system *
+                (
+                    clock -
+                    last_event_time
+                );
+
+            last_event_time =
+                clock;
+
+            /*
+             * Calculate the delay experienced by
+             * the customer that is now departing.
+             *
+             * Total delay =
+             *
+             * departure time - arrival time
+             *
+             * This includes:
+             *
+             * queueing delay + service time.
+             */
+
+            total_delay_of_served +=
+                clock -
+                arrival_times[
+                    queue_head
+                ];
+
+            /*
+             * Remove departing customer's
+             * arrival time from circular buffer.
+             */
+
+            queue_head =
+                (
+                    queue_head + 1
+                ) %
+                system_capacity;
+
+            number_in_system--;
+
+            total_served++;
+
+            /*
+             * Deterministic M/D/1 service.
+             */
+
+            total_busy_time +=
+                service_time;
+
+            /*
+             * If customers remain in system,
+             * immediately begin next service.
+             */
+
+            if (
+                number_in_system > 0
+            )
+            {
+                next_departure_time =
+                    clock +
+                    service_time;
+            }
+        }
+    }
+
+    /******************************************************************/
+
+    /*
+     * Final statistics.
+     */
+
+    result.utilization =
+        total_busy_time /
+        clock;
+
+    result.mean_number =
+        integral_of_n /
+        clock;
+
+    /*
+     * Only SERVED customers appear here.
+     */
+
+    result.mean_delay =
+        total_delay_of_served /
+        (double) total_served;
+
+    /*
+     * Rejection probability:
+     *
+     * rejected customers / total attempted arrivals
+     */
+
+    result.rejection_probability =
+        (double) total_rejected /
+        (double) total_arrived;
+
+    result.final_clock =
+        clock;
+
+    result.total_arrived =
+        total_arrived;
+
+    result.total_rejected =
+        total_rejected;
+
+    result.total_served =
+        total_served;
+
+    result.final_number_in_system =
+        number_in_system;
+
+    /*
+     * Release allocated memory.
+     */
+
+    free(
+        arrival_times
+    );
 
     return result;
 }
@@ -432,7 +1061,8 @@ void run_part1(void)
                     run_simulation(
                         RANDOM_SEEDS[seed_index],
                         run_lengths[run_index],
-                        arrival_rate
+                        arrival_rate,
+                        SERVICE_TIME
                     );
 
                 /*
@@ -702,7 +1332,8 @@ void run_part2(void)
                 run_simulation(
                     RANDOM_SEEDS[seed_index],
                     number_to_serve,
-                    arrival_rate
+                    arrival_rate,
+                    SERVICE_TIME
                 );
 
             /*
@@ -829,14 +1460,1751 @@ void run_part2(void)
         "Averages:    part2_averages.csv\n\n"
     );
 }
+
+/*******************************************************************************/
+
+/*
+ * PART 3
+ *
+ * Compare M/D/1 and M/M/1 systems.
+ *
+ * Both systems have:
+ *
+ * - the same arrival rate
+ * - the same mean service time
+ * - the same number of customers served
+ *
+ * M/D/1 has deterministic service times.
+ * M/M/1 has exponentially distributed service times.
+ *
+ * The required result is:
+ *
+ * MEAN DELAY vs ARRIVAL RATE
+ *
+ * for M/D/1 and M/M/1 on the same graph.
+ */
+
+void run_part3(void)
+{
+    /*
+     * Use the same traffic loads as Part 2.
+     *
+     * All are stable because rho < 1.
+     */
+
+    const double traffic_loads[] = {
+        0.02,
+        0.05,
+        0.10,
+        0.20,
+        0.30,
+        0.40,
+        0.50,
+        0.60,
+        0.70,
+        0.80,
+        0.90,
+        0.95,
+        0.98
+    };
+
+    const int number_of_loads = 13;
+
+    /*
+     * Long simulation run for reliable
+     * performance measurements.
+     */
+
+    const long int number_to_serve =
+        1000000L;
+
+    FILE *raw_file;
+    FILE *average_file;
+
+    int load_index;
+    int seed_index;
+
+    /*
+     * Create CSV containing individual seed runs.
+     */
+
+    raw_file =
+        fopen(
+            "part3_raw_results.csv",
+            "w"
+        );
+
+    /*
+     * Create CSV containing averaged results.
+     *
+     * This file is the one that should be used
+     * to make the Part 3 graph.
+     */
+
+    average_file =
+        fopen(
+            "part3_averages.csv",
+            "w"
+        );
+
+    if (
+        raw_file == NULL ||
+        average_file == NULL
+    )
+    {
+        printf(
+            "ERROR: Could not create "
+            "Part 3 result files.\n"
+        );
+
+        if (raw_file != NULL)
+        {
+            fclose(raw_file);
+        }
+
+        if (average_file != NULL)
+        {
+            fclose(average_file);
+        }
+
+        return;
+    }
+
+    /******************************************************************/
+    /*
+     * Raw results CSV header.
+     */
+
+    fprintf(
+        raw_file,
+
+        "rho,"
+        "arrival_rate,"
+        "service_time,"
+        "seed,"
+        "number_to_serve,"
+        "md1_mean_delay,"
+        "mm1_mean_delay,"
+        "md1_utilization,"
+        "mm1_utilization,"
+        "md1_mean_number,"
+        "mm1_mean_number\n"
+    );
+
+    /*
+     * Averaged CSV header.
+     */
+
+    fprintf(
+        average_file,
+
+        "rho,"
+        "arrival_rate,"
+        "service_time,"
+        "number_to_serve,"
+        "number_of_seeds,"
+        "average_md1_mean_delay,"
+        "average_mm1_mean_delay,"
+        "average_md1_utilization,"
+        "average_mm1_utilization,"
+        "average_md1_mean_number,"
+        "average_mm1_mean_number\n"
+    );
+
+    printf("\n");
+    printf("========================================\n");
+    printf("PART 3 - M/D/1 vs M/M/1\n");
+    printf("========================================\n\n");
+
+    /******************************************************************/
+    /*
+     * Run every traffic load.
+     */
+
+    for (
+        load_index = 0;
+        load_index < number_of_loads;
+        load_index++
+    )
+    {
+        double arrival_rate;
+
+        /*
+         * Running totals used to average
+         * results across seeds.
+         */
+
+        double sum_md1_delay = 0.0;
+        double sum_mm1_delay = 0.0;
+
+        double sum_md1_utilization = 0.0;
+        double sum_mm1_utilization = 0.0;
+
+        double sum_md1_mean_number = 0.0;
+        double sum_mm1_mean_number = 0.0;
+
+        /*
+         * rho = lambda * X
+         *
+         * therefore:
+         *
+         * lambda = rho / X
+         */
+
+        arrival_rate =
+            traffic_loads[load_index] /
+            SERVICE_TIME;
+
+        /**************************************************************/
+        /*
+         * Repeat each arrival rate using all seeds.
+         */
+
+        for (
+            seed_index = 0;
+            seed_index < NUM_SEEDS;
+            seed_index++
+        )
+        {
+            SimulationResult md1_result;
+            SimulationResult mm1_result;
+
+            /*
+             * Run original M/D/1 simulation.
+             */
+
+            md1_result =
+                run_simulation(
+                    RANDOM_SEEDS[seed_index],
+                    number_to_serve,
+                    arrival_rate,
+                    SERVICE_TIME
+                );
+
+            /*
+             * Run modified M/M/1 simulation.
+             */
+
+            mm1_result =
+                run_simulation_mm1(
+                    RANDOM_SEEDS[seed_index],
+                    number_to_serve,
+                    arrival_rate,
+                    SERVICE_TIME
+                );
+
+            /*
+             * Store raw results.
+             */
+
+            fprintf(
+                raw_file,
+
+                "%.5f,"
+                "%.8f,"
+                "%.2f,"
+                "%u,"
+                "%ld,"
+                "%.10f,"
+                "%.10f,"
+                "%.10f,"
+                "%.10f,"
+                "%.10f,"
+                "%.10f\n",
+
+                traffic_loads[load_index],
+
+                arrival_rate,
+
+                SERVICE_TIME,
+
+                RANDOM_SEEDS[seed_index],
+
+                number_to_serve,
+
+                md1_result.mean_delay,
+
+                mm1_result.mean_delay,
+
+                md1_result.utilization,
+
+                mm1_result.utilization,
+
+                md1_result.mean_number,
+
+                mm1_result.mean_number
+            );
+
+            /*
+             * Add to totals for averaging.
+             */
+
+            sum_md1_delay +=
+                md1_result.mean_delay;
+
+            sum_mm1_delay +=
+                mm1_result.mean_delay;
+
+            sum_md1_utilization +=
+                md1_result.utilization;
+
+            sum_mm1_utilization +=
+                mm1_result.utilization;
+
+            sum_md1_mean_number +=
+                md1_result.mean_number;
+
+            sum_mm1_mean_number +=
+                mm1_result.mean_number;
+        }
+
+        /**************************************************************/
+        /*
+         * Calculate averages across seeds.
+         */
+
+        {
+            double average_md1_delay =
+                sum_md1_delay /
+                NUM_SEEDS;
+
+            double average_mm1_delay =
+                sum_mm1_delay /
+                NUM_SEEDS;
+
+            double average_md1_utilization =
+                sum_md1_utilization /
+                NUM_SEEDS;
+
+            double average_mm1_utilization =
+                sum_mm1_utilization /
+                NUM_SEEDS;
+
+            double average_md1_mean_number =
+                sum_md1_mean_number /
+                NUM_SEEDS;
+
+            double average_mm1_mean_number =
+                sum_mm1_mean_number /
+                NUM_SEEDS;
+
+            /*
+             * Save averaged results.
+             */
+
+            fprintf(
+                average_file,
+
+                "%.5f,"
+                "%.8f,"
+                "%.2f,"
+                "%ld,"
+                "%d,"
+                "%.10f,"
+                "%.10f,"
+                "%.10f,"
+                "%.10f,"
+                "%.10f,"
+                "%.10f\n",
+
+                traffic_loads[load_index],
+
+                arrival_rate,
+
+                SERVICE_TIME,
+
+                number_to_serve,
+
+                NUM_SEEDS,
+
+                average_md1_delay,
+
+                average_mm1_delay,
+
+                average_md1_utilization,
+
+                average_mm1_utilization,
+
+                average_md1_mean_number,
+
+                average_mm1_mean_number
+            );
+
+            /*
+             * Print useful comparison to terminal.
+             */
+
+            printf(
+                "rho = %.2f | "
+                "lambda = %.5f | "
+                "MD1 delay = %.6f | "
+                "MM1 delay = %.6f\n",
+
+                traffic_loads[load_index],
+
+                arrival_rate,
+
+                average_md1_delay,
+
+                average_mm1_delay
+            );
+        }
+    }
+
+    fclose(raw_file);
+    fclose(average_file);
+
+    printf("\n");
+    printf(
+        "Part 3 complete.\n"
+        "Raw results: part3_raw_results.csv\n"
+        "Averages:    part3_averages.csv\n\n"
+    );
+}
+
+/*******************************************************************************/
+
+/*
+ * PART 4
+ *
+ * Repeat the M/D/1 and M/M/1 comparison from Part 3,
+ * but DOUBLE the mean service time.
+ *
+ * Part 3:
+ *
+ *      SERVICE_TIME = 8
+ *
+ * Part 4:
+ *
+ *      SERVICE_TIME = 16
+ *
+ * We vary ARRIVAL_RATE over stable and near-critical
+ * operating regions.
+ *
+ * The output contains:
+ *
+ * - mean delay
+ * - mean number in system
+ * - server utilization
+ *
+ * for both M/D/1 and M/M/1.
+ */
+
+void run_part4(void)
+{
+    /*
+     * Same rho values as Part 3.
+     *
+     * This makes comparison using rho especially easy.
+     *
+     * Since SERVICE_TIME is now 16:
+     *
+     * lambda = rho / 16
+     *
+     * and the new critical arrival rate is:
+     *
+     * lambda_critical = 1 / 16 = 0.0625
+     */
+
+    const double traffic_loads[] = {
+        0.02,
+        0.05,
+        0.10,
+        0.20,
+        0.30,
+        0.40,
+        0.50,
+        0.60,
+        0.70,
+        0.80,
+        0.90,
+        0.95,
+        0.98
+    };
+
+    const int number_of_loads = 13;
+
+    /*
+     * Same long simulation length used in Parts 2 and 3.
+     */
+
+    const long int number_to_serve =
+        1000000L;
+
+    FILE *raw_file;
+    FILE *average_file;
+
+    int load_index;
+    int seed_index;
+
+    /*
+     * Raw results:
+     *
+     * one row per seed.
+     */
+
+    raw_file =
+        fopen(
+            "part4_raw_results.csv",
+            "w"
+        );
+
+    /*
+     * Averaged results:
+     *
+     * one row per traffic load.
+     */
+
+    average_file =
+        fopen(
+            "part4_averages.csv",
+            "w"
+        );
+
+    if (
+        raw_file == NULL ||
+        average_file == NULL
+    )
+    {
+        printf(
+            "ERROR: Could not create "
+            "Part 4 result files.\n"
+        );
+
+        if (raw_file != NULL)
+        {
+            fclose(raw_file);
+        }
+
+        if (average_file != NULL)
+        {
+            fclose(average_file);
+        }
+
+        return;
+    }
+
+    /******************************************************************/
+
+    /*
+     * Raw-results CSV header.
+     */
+
+    fprintf(
+        raw_file,
+
+        "rho,"
+        "arrival_rate,"
+        "service_time,"
+        "seed,"
+        "number_to_serve,"
+        "md1_mean_delay,"
+        "mm1_mean_delay,"
+        "md1_mean_number,"
+        "mm1_mean_number,"
+        "md1_utilization,"
+        "mm1_utilization\n"
+    );
+
+    /*
+     * Averaged-results CSV header.
+     */
+
+    fprintf(
+        average_file,
+
+        "rho,"
+        "arrival_rate,"
+        "service_time,"
+        "number_to_serve,"
+        "number_of_seeds,"
+        "average_md1_mean_delay,"
+        "average_mm1_mean_delay,"
+        "average_md1_mean_number,"
+        "average_mm1_mean_number,"
+        "average_md1_utilization,"
+        "average_mm1_utilization\n"
+    );
+
+    printf("\n");
+    printf("========================================\n");
+    printf("PART 4 - DOUBLE SERVICE TIME\n");
+    printf("========================================\n\n");
+
+    printf(
+        "Part 3 service time = %.1f\n",
+        SERVICE_TIME
+    );
+
+    printf(
+        "Part 4 service time = %.1f\n",
+        PART4_SERVICE_TIME
+    );
+
+    printf(
+        "Part 4 critical arrival rate = %.6f\n\n",
+        1.0 / PART4_SERVICE_TIME
+    );
+
+    /******************************************************************/
+
+    for (
+        load_index = 0;
+        load_index < number_of_loads;
+        load_index++
+    )
+    {
+        double arrival_rate;
+
+        double sum_md1_delay = 0.0;
+        double sum_mm1_delay = 0.0;
+
+        double sum_md1_mean_number = 0.0;
+        double sum_mm1_mean_number = 0.0;
+
+        double sum_md1_utilization = 0.0;
+        double sum_mm1_utilization = 0.0;
+
+        /*
+         * rho = lambda * X
+         *
+         * therefore:
+         *
+         * lambda = rho / X
+         *
+         * Here X = 16.
+         */
+
+        arrival_rate =
+            traffic_loads[load_index] /
+            PART4_SERVICE_TIME;
+
+        /**************************************************************/
+
+        /*
+         * Run each configuration using all random seeds.
+         */
+
+        for (
+            seed_index = 0;
+            seed_index < NUM_SEEDS;
+            seed_index++
+        )
+        {
+            SimulationResult md1_result;
+            SimulationResult mm1_result;
+
+            /*
+             * M/D/1 with doubled service time.
+             */
+
+            md1_result =
+                run_simulation(
+                    RANDOM_SEEDS[seed_index],
+                    number_to_serve,
+                    arrival_rate,
+                    PART4_SERVICE_TIME
+                );
+
+            /*
+             * M/M/1 with doubled mean service time.
+             */
+
+            mm1_result =
+                run_simulation_mm1(
+                    RANDOM_SEEDS[seed_index],
+                    number_to_serve,
+                    arrival_rate,
+                    PART4_SERVICE_TIME
+                );
+
+            /*
+             * Save raw result.
+             */
+
+            fprintf(
+                raw_file,
+
+                "%.5f,"
+                "%.8f,"
+                "%.2f,"
+                "%u,"
+                "%ld,"
+                "%.10f,"
+                "%.10f,"
+                "%.10f,"
+                "%.10f,"
+                "%.10f,"
+                "%.10f\n",
+
+                traffic_loads[load_index],
+
+                arrival_rate,
+
+                PART4_SERVICE_TIME,
+
+                RANDOM_SEEDS[seed_index],
+
+                number_to_serve,
+
+                md1_result.mean_delay,
+
+                mm1_result.mean_delay,
+
+                md1_result.mean_number,
+
+                mm1_result.mean_number,
+
+                md1_result.utilization,
+
+                mm1_result.utilization
+            );
+
+            /*
+             * Add results for averaging.
+             */
+
+            sum_md1_delay +=
+                md1_result.mean_delay;
+
+            sum_mm1_delay +=
+                mm1_result.mean_delay;
+
+            sum_md1_mean_number +=
+                md1_result.mean_number;
+
+            sum_mm1_mean_number +=
+                mm1_result.mean_number;
+
+            sum_md1_utilization +=
+                md1_result.utilization;
+
+            sum_mm1_utilization +=
+                mm1_result.utilization;
+        }
+
+        /**************************************************************/
+
+        /*
+         * Average results across seeds.
+         */
+
+        {
+            double average_md1_delay =
+                sum_md1_delay /
+                NUM_SEEDS;
+
+            double average_mm1_delay =
+                sum_mm1_delay /
+                NUM_SEEDS;
+
+            double average_md1_mean_number =
+                sum_md1_mean_number /
+                NUM_SEEDS;
+
+            double average_mm1_mean_number =
+                sum_mm1_mean_number /
+                NUM_SEEDS;
+
+            double average_md1_utilization =
+                sum_md1_utilization /
+                NUM_SEEDS;
+
+            double average_mm1_utilization =
+                sum_mm1_utilization /
+                NUM_SEEDS;
+
+            /*
+             * Save averaged values.
+             */
+
+            fprintf(
+                average_file,
+
+                "%.5f,"
+                "%.8f,"
+                "%.2f,"
+                "%ld,"
+                "%d,"
+                "%.10f,"
+                "%.10f,"
+                "%.10f,"
+                "%.10f,"
+                "%.10f,"
+                "%.10f\n",
+
+                traffic_loads[load_index],
+
+                arrival_rate,
+
+                PART4_SERVICE_TIME,
+
+                number_to_serve,
+
+                NUM_SEEDS,
+
+                average_md1_delay,
+
+                average_mm1_delay,
+
+                average_md1_mean_number,
+
+                average_mm1_mean_number,
+
+                average_md1_utilization,
+
+                average_mm1_utilization
+            );
+
+            /*
+             * Display useful results.
+             */
+
+            printf(
+                "rho = %.2f | "
+                "lambda = %.5f | "
+                "MD1 delay = %.6f | "
+                "MM1 delay = %.6f | "
+                "MD1 N = %.6f | "
+                "MM1 N = %.6f\n",
+
+                traffic_loads[load_index],
+
+                arrival_rate,
+
+                average_md1_delay,
+
+                average_mm1_delay,
+
+                average_md1_mean_number,
+
+                average_mm1_mean_number
+            );
+        }
+    }
+
+    fclose(raw_file);
+    fclose(average_file);
+
+    printf("\n");
+
+    printf(
+        "Part 4 complete.\n"
+        "Raw results: part4_raw_results.csv\n"
+        "Averages:    part4_averages.csv\n\n"
+    );
+}
+
+/*******************************************************************************/
+
+/*
+ * PART 5
+ *
+ * Analytical comparison.
+ *
+ * Compare simulated mean delay for:
+ *
+ *      M/D/1
+ *      M/M/1
+ *
+ * against the queueing-theory equations given
+ * in the lab handout.
+ *
+ *
+ * M/D/1:
+ *
+ *                X(2 - rho)
+ * d_MD1 = -------------------------
+ *                2(1 - rho)
+ *
+ *
+ * M/M/1:
+ *
+ *                   X
+ * d_MM1 = ----------------
+ *                1 - rho
+ *
+ *
+ * These equations are only valid for:
+ *
+ *      rho < 1
+ *
+ *
+ * The comparison is performed for:
+ *
+ *      X = 8
+ *
+ * and
+ *
+ *      X = 16
+ *
+ */
+
+void run_part5(void)
+{
+    /*
+     * Same stable traffic loads used previously.
+     */
+
+    const double traffic_loads[] = {
+        0.02,
+        0.05,
+        0.10,
+        0.20,
+        0.30,
+        0.40,
+        0.50,
+        0.60,
+        0.70,
+        0.80,
+        0.90,
+        0.95,
+        0.98
+    };
+
+    const int number_of_loads = 13;
+
+    /*
+     * Compare both service times used in the lab.
+     */
+
+    const double service_times[] = {
+        SERVICE_TIME,
+        PART4_SERVICE_TIME
+    };
+
+    const int number_of_service_times = 2;
+
+    /*
+     * Long simulation run for reliable results.
+     */
+
+    const long int number_to_serve =
+        1000000L;
+
+    FILE *file;
+
+    int service_index;
+    int load_index;
+    int seed_index;
+
+    /*
+     * Create comparison CSV.
+     */
+
+    file =
+        fopen(
+            "part5_analytical_comparison.csv",
+            "w"
+        );
+
+    if (file == NULL)
+    {
+        printf(
+            "ERROR: Could not create "
+            "part5_analytical_comparison.csv\n"
+        );
+
+        return;
+    }
+
+    /******************************************************************/
+
+    /*
+     * CSV header.
+     */
+
+    fprintf(
+        file,
+
+        "service_time,"
+        "rho,"
+        "arrival_rate,"
+        "number_to_serve,"
+        "number_of_seeds,"
+        "simulated_md1_delay,"
+        "theoretical_md1_delay,"
+        "md1_percent_error,"
+        "simulated_mm1_delay,"
+        "theoretical_mm1_delay,"
+        "mm1_percent_error\n"
+    );
+
+    printf("\n");
+    printf("========================================\n");
+    printf("PART 5 - ANALYTICAL COMPARISON\n");
+    printf("========================================\n\n");
+
+    /******************************************************************/
+
+    /*
+     * Perform comparison for both service times.
+     */
+
+    for (
+        service_index = 0;
+        service_index < number_of_service_times;
+        service_index++
+    )
+    {
+        double service_time =
+            service_times[service_index];
+
+        printf(
+            "Service time X = %.1f\n\n",
+            service_time
+        );
+
+        /*
+         * Run all stable traffic loads.
+         */
+
+        for (
+            load_index = 0;
+            load_index < number_of_loads;
+            load_index++
+        )
+        {
+            double rho =
+                traffic_loads[load_index];
+
+            double arrival_rate =
+                rho / service_time;
+
+            /*
+             * Simulation totals used for averaging.
+             */
+
+            double sum_md1_delay = 0.0;
+            double sum_mm1_delay = 0.0;
+
+            /**********************************************************/
+
+            /*
+             * Run simulations using all random seeds.
+             */
+
+            for (
+                seed_index = 0;
+                seed_index < NUM_SEEDS;
+                seed_index++
+            )
+            {
+                SimulationResult md1_result;
+                SimulationResult mm1_result;
+
+                /*
+                 * M/D/1 simulation.
+                 */
+
+                md1_result =
+                    run_simulation(
+                        RANDOM_SEEDS[seed_index],
+                        number_to_serve,
+                        arrival_rate,
+                        service_time
+                    );
+
+                /*
+                 * M/M/1 simulation.
+                 */
+
+                mm1_result =
+                    run_simulation_mm1(
+                        RANDOM_SEEDS[seed_index],
+                        number_to_serve,
+                        arrival_rate,
+                        service_time
+                    );
+
+                /*
+                 * Add delays for averaging.
+                 */
+
+                sum_md1_delay +=
+                    md1_result.mean_delay;
+
+                sum_mm1_delay +=
+                    mm1_result.mean_delay;
+            }
+
+            /**********************************************************/
+
+            /*
+             * Average simulated delays.
+             */
+
+            {
+                double simulated_md1_delay =
+                    sum_md1_delay /
+                    NUM_SEEDS;
+
+                double simulated_mm1_delay =
+                    sum_mm1_delay /
+                    NUM_SEEDS;
+
+
+                /*
+                 * Analytical M/D/1 mean delay:
+                 *
+                 * X(2-rho)
+                 * ----------
+                 * 2(1-rho)
+                 */
+
+                double theoretical_md1_delay =
+                    service_time *
+                    (2.0 - rho) /
+                    (
+                        2.0 *
+                        (1.0 - rho)
+                    );
+
+
+                /*
+                 * Analytical M/M/1 mean delay:
+                 *
+                 * X
+                 * -----
+                 * 1-rho
+                 */
+
+                double theoretical_mm1_delay =
+                    service_time /
+                    (1.0 - rho);
+
+
+                /*
+                 * Percent error:
+                 *
+                 * |simulation - theory|
+                 * --------------------- x 100
+                 *       theory
+                 */
+
+                double md1_difference =
+                    simulated_md1_delay -
+                    theoretical_md1_delay;
+
+                double mm1_difference =
+                    simulated_mm1_delay -
+                    theoretical_mm1_delay;
+
+
+                /*
+                 * Convert differences to absolute values
+                 * without requiring another library.
+                 */
+
+                if (md1_difference < 0.0)
+                {
+                    md1_difference =
+                        -md1_difference;
+                }
+
+                if (mm1_difference < 0.0)
+                {
+                    mm1_difference =
+                        -mm1_difference;
+                }
+
+
+                {
+                    double md1_percent_error =
+                        (
+                            md1_difference /
+                            theoretical_md1_delay
+                        ) *
+                        100.0;
+
+                    double mm1_percent_error =
+                        (
+                            mm1_difference /
+                            theoretical_mm1_delay
+                        ) *
+                        100.0;
+
+
+                    /*
+                     * Save results.
+                     */
+
+                    fprintf(
+                        file,
+
+                        "%.2f,"
+                        "%.5f,"
+                        "%.8f,"
+                        "%ld,"
+                        "%d,"
+                        "%.10f,"
+                        "%.10f,"
+                        "%.6f,"
+                        "%.10f,"
+                        "%.10f,"
+                        "%.6f\n",
+
+                        service_time,
+
+                        rho,
+
+                        arrival_rate,
+
+                        number_to_serve,
+
+                        NUM_SEEDS,
+
+                        simulated_md1_delay,
+
+                        theoretical_md1_delay,
+
+                        md1_percent_error,
+
+                        simulated_mm1_delay,
+
+                        theoretical_mm1_delay,
+
+                        mm1_percent_error
+                    );
+
+
+                    /*
+                     * Print comparison to terminal.
+                     */
+
+                    printf(
+                        "rho = %.2f | "
+                        "MD1 sim = %.4f | "
+                        "MD1 theory = %.4f | "
+                        "err = %.3f%% | "
+                        "MM1 sim = %.4f | "
+                        "MM1 theory = %.4f | "
+                        "err = %.3f%%\n",
+
+                        rho,
+
+                        simulated_md1_delay,
+
+                        theoretical_md1_delay,
+
+                        md1_percent_error,
+
+                        simulated_mm1_delay,
+
+                        theoretical_mm1_delay,
+
+                        mm1_percent_error
+                    );
+                }
+            }
+        }
+
+        printf("\n");
+    }
+
+    fclose(file);
+
+    printf(
+        "Part 5 complete.\n"
+        "Results saved to "
+        "part5_analytical_comparison.csv\n\n"
+    );
+}
+/*******************************************************************************/
+
+/*
+ * PART 6
+ *
+ * Finite-capacity M/D/1 queue.
+ *
+ * For several MAX_QUEUE_SIZE values:
+ *
+ *      plot mean delay vs ARRIVAL_RATE
+ *
+ * and
+ *
+ *      plot rejection probability vs ARRIVAL_RATE
+ *
+ * Unlike the infinite queue, ARRIVAL_RATE may
+ * exceed the rho = 1 threshold.
+ */
+
+void run_part6(void)
+{
+    /*
+     * MAX_QUEUE_SIZE represents the number
+     * of WAITING positions.
+     *
+     * Try several substantially different sizes.
+     */
+
+    const int max_queue_sizes[] = {
+        1,
+        5,
+        20
+    };
+
+    const int number_of_queue_sizes =
+        3;
+
+    /*
+     * SERVICE_TIME = 8.
+     *
+     * For the infinite queue:
+     *
+     * lambda_critical = 1/8 = 0.125.
+     *
+     * But Part 6 allows lambda > 0.125.
+     *
+     * We intentionally extend the range far beyond
+     * 0.125 so that rejection probability approaches
+     * its theoretical maximum.
+     */
+
+    const double arrival_rates[] = {
+        0.001,
+        0.005,
+        0.010,
+        0.025,
+        0.050,
+        0.075,
+        0.100,
+        0.125,
+        0.150,
+        0.200,
+        0.300,
+        0.500,
+        1.000,
+        2.000,
+        5.000
+    };
+
+    const int number_of_arrival_rates =
+        15;
+
+    /*
+     * Part 6 does not prescribe a specific
+     * NUMBER_TO_SERVE.
+     *
+     * 100,000 provides reliable averages without
+     * making the very high-arrival-rate runs
+     * unnecessarily slow.
+     */
+
+    const long int number_to_serve =
+        100000L;
+
+    FILE *raw_file;
+    FILE *average_file;
+
+    int queue_index;
+    int rate_index;
+    int seed_index;
+
+    /******************************************************************/
+
+    raw_file =
+        fopen(
+            "part6_raw_results.csv",
+            "w"
+        );
+
+    average_file =
+        fopen(
+            "part6_averages.csv",
+            "w"
+        );
+
+    if (
+        raw_file == NULL ||
+        average_file == NULL
+    )
+    {
+        printf(
+            "ERROR: Could not create "
+            "Part 6 result files.\n"
+        );
+
+        if (
+            raw_file != NULL
+        )
+        {
+            fclose(
+                raw_file
+            );
+        }
+
+        if (
+            average_file != NULL
+        )
+        {
+            fclose(
+                average_file
+            );
+        }
+
+        return;
+    }
+
+    /******************************************************************/
+
+    /*
+     * Raw CSV.
+     */
+
+    fprintf(
+        raw_file,
+
+        "max_queue_size,"
+        "arrival_rate,"
+        "rho,"
+        "service_time,"
+        "seed,"
+        "number_to_serve,"
+        "mean_delay,"
+        "rejection_probability,"
+        "mean_number,"
+        "utilization,"
+        "total_arrived,"
+        "total_rejected,"
+        "total_served,"
+        "final_number_in_system\n"
+    );
+
+    /*
+     * Averaged CSV.
+     */
+
+    fprintf(
+        average_file,
+
+        "max_queue_size,"
+        "arrival_rate,"
+        "rho,"
+        "service_time,"
+        "number_to_serve,"
+        "number_of_seeds,"
+        "average_mean_delay,"
+        "average_rejection_probability,"
+        "average_mean_number,"
+        "average_utilization,"
+        "theoretical_max_delay,"
+        "theoretical_max_rejection\n"
+    );
+
+    printf("\n");
+
+    printf(
+        "========================================\n"
+    );
+
+    printf(
+        "PART 6 - FINITE QUEUE\n"
+    );
+
+    printf(
+        "========================================\n\n"
+    );
+
+    /******************************************************************/
+
+    /*
+     * Loop through each queue size.
+     */
+
+    for (
+        queue_index = 0;
+        queue_index <
+            number_of_queue_sizes;
+        queue_index++
+    )
+    {
+        int max_queue_size =
+            max_queue_sizes[
+                queue_index
+            ];
+
+        /*
+         * Theoretical maximum delay:
+         *
+         * If K customers may wait, an accepted customer
+         * can arrive when:
+         *
+         *      one customer is in service
+         *      K-1 are already waiting
+         *
+         * They become the Kth waiting customer.
+         *
+         * Maximum total delay is therefore:
+         *
+         *      (K + 1) * SERVICE_TIME
+         */
+
+        double theoretical_max_delay =
+            (
+                max_queue_size + 1
+            ) *
+            SERVICE_TIME;
+
+        printf(
+            "MAX_QUEUE_SIZE = %d | "
+            "maximum delay = %.2f\n",
+
+            max_queue_size,
+
+            theoretical_max_delay
+        );
+
+        /**************************************************************/
+
+        /*
+         * Loop through arrival rates.
+         */
+
+        for (
+            rate_index = 0;
+            rate_index <
+                number_of_arrival_rates;
+            rate_index++
+        )
+        {
+            double arrival_rate =
+                arrival_rates[
+                    rate_index
+                ];
+
+            /*
+             * rho is still useful as offered traffic,
+             * even though rho > 1 is now allowed.
+             */
+
+            double rho =
+                arrival_rate *
+                SERVICE_TIME;
+
+            double sum_mean_delay =
+                0.0;
+
+            double sum_rejection_probability =
+                0.0;
+
+            double sum_mean_number =
+                0.0;
+
+            double sum_utilization =
+                0.0;
+
+            /**********************************************************/
+
+            /*
+             * Repeat using all five seeds.
+             */
+
+            for (
+                seed_index = 0;
+                seed_index <
+                    NUM_SEEDS;
+                seed_index++
+            )
+            {
+                FiniteQueueResult result;
+
+                result =
+                    run_simulation_finite_md1(
+                        RANDOM_SEEDS[
+                            seed_index
+                        ],
+                        number_to_serve,
+                        arrival_rate,
+                        SERVICE_TIME,
+                        max_queue_size
+                    );
+
+                /*
+                 * Raw result.
+                 */
+
+                fprintf(
+                    raw_file,
+
+                    "%d,"
+                    "%.8f,"
+                    "%.5f,"
+                    "%.2f,"
+                    "%u,"
+                    "%ld,"
+                    "%.10f,"
+                    "%.10f,"
+                    "%.10f,"
+                    "%.10f,"
+                    "%ld,"
+                    "%ld,"
+                    "%ld,"
+                    "%d\n",
+
+                    max_queue_size,
+
+                    arrival_rate,
+
+                    rho,
+
+                    SERVICE_TIME,
+
+                    RANDOM_SEEDS[
+                        seed_index
+                    ],
+
+                    number_to_serve,
+
+                    result.mean_delay,
+
+                    result.rejection_probability,
+
+                    result.mean_number,
+
+                    result.utilization,
+
+                    result.total_arrived,
+
+                    result.total_rejected,
+
+                    result.total_served,
+
+                    result.final_number_in_system
+                );
+
+                /*
+                 * Add to averages.
+                 */
+
+                sum_mean_delay +=
+                    result.mean_delay;
+
+                sum_rejection_probability +=
+                    result.rejection_probability;
+
+                sum_mean_number +=
+                    result.mean_number;
+
+                sum_utilization +=
+                    result.utilization;
+            }
+
+            /**********************************************************/
+
+            /*
+             * Average over seeds.
+             */
+
+            {
+                double average_mean_delay =
+                    sum_mean_delay /
+                    NUM_SEEDS;
+
+                double average_rejection_probability =
+                    sum_rejection_probability /
+                    NUM_SEEDS;
+
+                double average_mean_number =
+                    sum_mean_number /
+                    NUM_SEEDS;
+
+                double average_utilization =
+                    sum_utilization /
+                    NUM_SEEDS;
+
+                /*
+                 * Write averaged results.
+                 */
+
+                fprintf(
+                    average_file,
+
+                    "%d,"
+                    "%.8f,"
+                    "%.5f,"
+                    "%.2f,"
+                    "%ld,"
+                    "%d,"
+                    "%.10f,"
+                    "%.10f,"
+                    "%.10f,"
+                    "%.10f,"
+                    "%.10f,"
+                    "%.2f\n",
+
+                    max_queue_size,
+
+                    arrival_rate,
+
+                    rho,
+
+                    SERVICE_TIME,
+
+                    number_to_serve,
+
+                    NUM_SEEDS,
+
+                    average_mean_delay,
+
+                    average_rejection_probability,
+
+                    average_mean_number,
+
+                    average_utilization,
+
+                    theoretical_max_delay,
+
+                    1.0
+                );
+
+                /*
+                 * Terminal output.
+                 */
+
+                printf(
+                    "K = %-2d | "
+                    "lambda = %-7.3f | "
+                    "rho = %-6.2f | "
+                    "delay = %-10.4f | "
+                    "reject = %.4f\n",
+
+                    max_queue_size,
+
+                    arrival_rate,
+
+                    rho,
+
+                    average_mean_delay,
+
+                    average_rejection_probability
+                );
+            }
+        }
+
+        printf("\n");
+    }
+
+    fclose(
+        raw_file
+    );
+
+    fclose(
+        average_file
+    );
+
+    printf(
+        "Part 6 complete.\n"
+        "Raw results: part6_raw_results.csv\n"
+        "Averages:    part6_averages.csv\n\n"
+    );
+}
 /*******************************************************************************/
 /*
- * main() uses various simulation parameters and creates a clock variable to
- * simulate real time. A loop repeatedly determines if the next event to occur
- * is a customer arrival or customer departure. In either case the state of the
- * system is updated and statistics are collected before the next
- * iteration. When it finally reaches NUMBER_TO_SERVE customers, the program
- * outputs some statistics such as mean delay.
+ * main() 
+ * HANDOUT STATES: Rather than manually performing each simulation run, you may 
+ * prefer to wrap the provided code in loops while changing the various parameters. 
+ * The multiple runs can then be automated.
  */
 
 int main(void)
@@ -859,21 +3227,17 @@ int main(void)
         "rho = 1 when lambda = 1/8 = 0.125.\n"
     );
 
-    /*
-     * Run Part 1.
-     */
-
     run_part1();
 
-    /*
-     * Run Part 2.
-     */
+    run_part2();
 
-    // run_part2();
+    run_part3();
 
-    printf(
-        "All Part 1 experiments complete.\n"
-    );
+    run_part4();
+
+    run_part5();
+
+    run_part6();
 
     return 0;
 }
