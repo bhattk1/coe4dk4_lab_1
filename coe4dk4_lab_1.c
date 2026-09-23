@@ -97,24 +97,6 @@ typedef struct
 
 } FiniteQueueResult;
 
-/*******************************************************************************/
-
-/*
- * run_simulation()
- *
- * Runs one M/D/1 simulation.
- *
- * The queueing logic is based directly on the supplied
- * coe4dk4_lab_1.c program.
- *
- * Inputs:
- *
- * random_seed     - random number generator seed
- * number_to_serve - number of customers to serve
- * arrival_rate    - mean arrival rate, lambda
- *
- */
-
 SimulationResult run_simulation(
     unsigned random_seed,
     long int number_to_serve,
@@ -124,18 +106,10 @@ SimulationResult run_simulation(
 {
     double clock = 0.0;
 
-    /*
-     * System state variables.
-     */
-
     int number_in_system = 0;
 
     double next_arrival_time = 0.0;
     double next_departure_time = 0.0;
-
-    /*
-     * Data collection variables.
-     */
 
     long int total_served = 0;
     long int total_arrived = 0;
@@ -146,50 +120,20 @@ SimulationResult run_simulation(
 
     SimulationResult result;
 
-    /*
-     * Set the random number generator seed.
-     */
-
     random_generator_initialize(random_seed);
-
-    /*
-     * Continue until NUMBER_TO_SERVE customers
-     * have completed service.
-     */
 
     while (total_served < number_to_serve)
     {
-        /*
-         * Determine whether the next event is
-         * an arrival or departure.
-         */
-
         if (
             number_in_system == 0 ||
             next_arrival_time < next_departure_time
         )
         {
-            /***********************************************************/
-            /*
-             * ARRIVAL EVENT
-             */
-
             clock = next_arrival_time;
-
-            /*
-             * Generate next arrival.
-             *
-             * Poisson arrivals have exponentially distributed
-             * inter-arrival times.
-             */
 
             next_arrival_time =
                 clock +
                 exponential_generator(1.0 / arrival_rate);
-
-            /*
-             * Update statistics.
-             */
 
             integral_of_n +=
                 number_in_system *
@@ -197,20 +141,8 @@ SimulationResult run_simulation(
 
             last_event_time = clock;
 
-            /*
-             * Customer enters the system.
-             */
-
             number_in_system++;
             total_arrived++;
-
-            /*
-             * If the customer arrived to an empty system,
-             * immediately start service.
-             *
-             * This is an M/D/1 system, so every service
-             * time is exactly SERVICE_TIME.
-             */
 
             if (number_in_system == 1)
             {
@@ -221,16 +153,7 @@ SimulationResult run_simulation(
 
         else
         {
-            /***********************************************************/
-            /*
-             * DEPARTURE EVENT
-             */
-
             clock = next_departure_time;
-
-            /*
-             * Update statistics.
-             */
 
             integral_of_n +=
                 number_in_system *
@@ -238,23 +161,10 @@ SimulationResult run_simulation(
 
             last_event_time = clock;
 
-            /*
-             * Customer leaves system.
-             */
-
             number_in_system--;
             total_served++;
 
-            /*
-             * Server was busy for exactly SERVICE_TIME.
-             */
-
             total_busy_time += service_time;
-
-            /*
-             * If another customer is waiting,
-             * start serving them immediately.
-             */
 
             if (number_in_system > 0)
             {
@@ -263,11 +173,6 @@ SimulationResult run_simulation(
             }
         }
     }
-
-    /******************************************************************/
-    /*
-     * Calculate final simulation statistics.
-     */
 
     result.utilization =
         total_busy_time / clock;
@@ -297,25 +202,6 @@ SimulationResult run_simulation(
 
     return result;
 }
-
-/*******************************************************************************/
-
-/*
- * run_simulation_mm1()
- *
- * Runs one M/M/1 simulation.
- *
- * Arrivals are Poisson, exactly as in the M/D/1 simulator.
- *
- * The difference is the service time:
- *
- * M/D/1:
- *      service time = SERVICE_TIME
- *
- * M/M/1:
- *      service time is exponentially distributed
- *      with mean SERVICE_TIME.
- */
 
 SimulationResult run_simulation_mm1(
     unsigned random_seed,
@@ -326,26 +212,12 @@ SimulationResult run_simulation_mm1(
 {
     double clock = 0.0;
 
-    /*
-     * System state variables.
-     */
-
     int number_in_system = 0;
 
     double next_arrival_time = 0.0;
     double next_departure_time = 0.0;
 
-    /*
-     * For M/M/1 we must remember the actual
-     * randomly generated service time of the
-     * customer currently being served.
-     */
-
     double current_service_time = 0.0;
-
-    /*
-     * Data collection variables.
-     */
 
     long int total_served = 0;
     long int total_arrived = 0;
@@ -356,50 +228,20 @@ SimulationResult run_simulation_mm1(
 
     SimulationResult result;
 
-    /*
-     * Initialize random number generator.
-     */
-
     random_generator_initialize(random_seed);
-
-    /*
-     * Run simulation until the required number
-     * of customers have been served.
-     */
 
     while (total_served < number_to_serve)
     {
-        /*
-         * Determine whether the next event is
-         * an arrival or departure.
-         */
-
         if (
             number_in_system == 0 ||
             next_arrival_time < next_departure_time
         )
         {
-            /***********************************************************/
-            /*
-             * ARRIVAL EVENT
-             */
-
             clock = next_arrival_time;
-
-            /*
-             * Generate next arrival.
-             *
-             * Arrivals are still a Poisson process,
-             * therefore inter-arrival times are exponential.
-             */
 
             next_arrival_time =
                 clock +
                 exponential_generator(1.0 / arrival_rate);
-
-            /*
-             * Update integral of number in system.
-             */
 
             integral_of_n +=
                 number_in_system *
@@ -407,25 +249,8 @@ SimulationResult run_simulation_mm1(
 
             last_event_time = clock;
 
-            /*
-             * Customer enters system.
-             */
-
             number_in_system++;
             total_arrived++;
-
-            /*
-             * If server was idle, begin service immediately.
-             *
-             * THIS is the important Part 3 modification.
-             *
-             * Instead of:
-             *
-             * current_service_time = SERVICE_TIME;
-             *
-             * we generate an exponentially distributed
-             * service time whose mean is SERVICE_TIME.
-             */
 
             if (number_in_system == 1)
             {
@@ -442,16 +267,8 @@ SimulationResult run_simulation_mm1(
 
         else
         {
-            /***********************************************************/
-            /*
-             * DEPARTURE EVENT
-             */
 
             clock = next_departure_time;
-
-            /*
-             * Update statistics.
-             */
 
             integral_of_n +=
                 number_in_system *
@@ -459,36 +276,11 @@ SimulationResult run_simulation_mm1(
 
             last_event_time = clock;
 
-            /*
-             * Customer leaves.
-             */
-
             number_in_system--;
             total_served++;
 
-            /*
-             * IMPORTANT:
-             *
-             * For M/D/1 we used:
-             *
-             * total_busy_time += SERVICE_TIME;
-             *
-             * We CANNOT do that here because each customer's
-             * service time is different.
-             *
-             * Add the actual randomly generated service time.
-             */
-
             total_busy_time +=
                 current_service_time;
-
-            /*
-             * If customers are waiting, begin service
-             * for the next one.
-             *
-             * Generate a NEW exponential service time
-             * for every customer.
-             */
 
             if (number_in_system > 0)
             {
@@ -503,11 +295,6 @@ SimulationResult run_simulation_mm1(
             }
         }
     }
-
-    /******************************************************************/
-    /*
-     * Final statistics.
-     */
 
     result.utilization =
         total_busy_time / clock;
@@ -537,30 +324,6 @@ SimulationResult run_simulation_mm1(
 
     return result;
 }
-
-/*******************************************************************************/
-
-/*
- * run_simulation_finite_md1()
- *
- * Part 6 finite-capacity M/D/1 queue.
- *
- * MAX_QUEUE_SIZE counts customers WAITING in the queue.
- *
- * Therefore:
- *
- * total system capacity =
- *
- *      1 customer being served
- *      +
- *      MAX_QUEUE_SIZE customers waiting
- *
- * An arrival that finds all waiting positions occupied
- * is rejected.
- *
- * Only customers that are eventually served are included
- * in the mean-delay calculation.
- */
 
 FiniteQueueResult run_simulation_finite_md1(
     unsigned random_seed,
@@ -585,29 +348,10 @@ FiniteQueueResult run_simulation_finite_md1(
     double integral_of_n = 0.0;
     double last_event_time = 0.0;
 
-    /*
-     * Unlike the original simulator, Part 6 explicitly says
-     * that only served customers should be included in the
-     * mean delay.
-     *
-     * Therefore we store the arrival time of every accepted
-     * customer and calculate its delay when it departs.
-     */
-
     double total_delay_of_served = 0.0;
-
-    /*
-     * One customer may be in service, and
-     * max_queue_size customers may wait.
-     */
 
     int system_capacity =
         max_queue_size + 1;
-
-    /*
-     * Circular buffer containing arrival times of
-     * accepted customers.
-     */
 
     double *arrival_times =
         (double *) malloc(
@@ -630,28 +374,15 @@ FiniteQueueResult run_simulation_finite_md1(
         exit(EXIT_FAILURE);
     }
 
-    /*
-     * Initialize random-number generator.
-     */
-
     random_generator_initialize(
         random_seed
     );
-
-    /*
-     * Continue until NUMBER_TO_SERVE customers
-     * have actually completed service.
-     */
 
     while (
         total_served <
         number_to_serve
     )
     {
-        /*
-         * Decide whether the next event is
-         * an arrival or departure.
-         */
 
         if (
             number_in_system == 0 ||
@@ -659,17 +390,8 @@ FiniteQueueResult run_simulation_finite_md1(
             next_departure_time
         )
         {
-            /**********************************************************/
-            /*
-             * ARRIVAL EVENT
-             */
-
             clock =
                 next_arrival_time;
-
-            /*
-             * Generate next Poisson arrival.
-             */
 
             next_arrival_time =
                 clock +
@@ -677,10 +399,6 @@ FiniteQueueResult run_simulation_finite_md1(
                     1.0 /
                     arrival_rate
                 );
-
-            /*
-             * Update time integral of N(t).
-             */
 
             integral_of_n +=
                 number_in_system *
@@ -692,51 +410,18 @@ FiniteQueueResult run_simulation_finite_md1(
             last_event_time =
                 clock;
 
-            /*
-             * Count EVERY attempted arrival,
-             * including rejected arrivals.
-             */
-
             total_arrived++;
-
-            /*
-             * If:
-             *
-             * number_in_system ==
-             * max_queue_size + 1
-             *
-             * then there is:
-             *
-             * 1 customer in service
-             * +
-             * max_queue_size waiting
-             *
-             * so the queue is full.
-             */
 
             if (
                 number_in_system >=
                 system_capacity
             )
             {
-                /*
-                 * Reject customer.
-                 *
-                 * They do NOT enter the system and
-                 * therefore contribute nothing to delay.
-                 */
-
                 total_rejected++;
             }
 
             else
             {
-                /*
-                 * Customer is accepted.
-                 *
-                 * Save their arrival time.
-                 */
-
                 arrival_times[
                     queue_tail
                 ] =
@@ -749,11 +434,6 @@ FiniteQueueResult run_simulation_finite_md1(
                     system_capacity;
 
                 number_in_system++;
-
-                /*
-                 * If system was previously empty,
-                 * service starts immediately.
-                 */
 
                 if (
                     number_in_system == 1
@@ -768,17 +448,8 @@ FiniteQueueResult run_simulation_finite_md1(
 
         else
         {
-            /**********************************************************/
-            /*
-             * DEPARTURE EVENT
-             */
-
             clock =
                 next_departure_time;
-
-            /*
-             * Update time integral of N(t).
-             */
 
             integral_of_n +=
                 number_in_system *
@@ -790,29 +461,11 @@ FiniteQueueResult run_simulation_finite_md1(
             last_event_time =
                 clock;
 
-            /*
-             * Calculate the delay experienced by
-             * the customer that is now departing.
-             *
-             * Total delay =
-             *
-             * departure time - arrival time
-             *
-             * This includes:
-             *
-             * queueing delay + service time.
-             */
-
             total_delay_of_served +=
                 clock -
                 arrival_times[
                     queue_head
                 ];
-
-            /*
-             * Remove departing customer's
-             * arrival time from circular buffer.
-             */
 
             queue_head =
                 (
@@ -824,17 +477,8 @@ FiniteQueueResult run_simulation_finite_md1(
 
             total_served++;
 
-            /*
-             * Deterministic M/D/1 service.
-             */
-
             total_busy_time +=
                 service_time;
-
-            /*
-             * If customers remain in system,
-             * immediately begin next service.
-             */
 
             if (
                 number_in_system > 0
@@ -847,12 +491,6 @@ FiniteQueueResult run_simulation_finite_md1(
         }
     }
 
-    /******************************************************************/
-
-    /*
-     * Final statistics.
-     */
-
     result.utilization =
         total_busy_time /
         clock;
@@ -861,19 +499,9 @@ FiniteQueueResult run_simulation_finite_md1(
         integral_of_n /
         clock;
 
-    /*
-     * Only SERVED customers appear here.
-     */
-
     result.mean_delay =
         total_delay_of_served /
         (double) total_served;
-
-    /*
-     * Rejection probability:
-     *
-     * rejected customers / total attempted arrivals
-     */
 
     result.rejection_probability =
         (double) total_rejected /
@@ -894,18 +522,12 @@ FiniteQueueResult run_simulation_finite_md1(
     result.final_number_in_system =
         number_in_system;
 
-    /*
-     * Release allocated memory.
-     */
-
     free(
         arrival_times
     );
 
     return result;
 }
-
-/*******************************************************************************/
 
 /*
  * PART 1
@@ -927,14 +549,6 @@ FiniteQueueResult run_simulation_finite_md1(
 
 void run_part1(void)
 {
-    /*
-     * Required simulation run lengths:
-     *
-     * 10^2
-     * 10^4
-     * 10^6
-     */
-
     const long int run_lengths[] = {
         100L,
         10000L,
@@ -944,8 +558,7 @@ void run_part1(void)
     const int number_of_run_lengths = 3;
 
     /*
-     * We define three representative traffic loads.
-     *
+     * define three representative traffic loads
      * rho = 0.50 -> clearly stable
      * rho = 0.95 -> near-critical
      * rho = 1.10 -> unstable
@@ -1017,14 +630,6 @@ void run_part1(void)
     printf("PART 1\n");
     printf("========================================\n\n");
 
-    /*
-     * Loop over:
-     *
-     * simulation run length
-     * traffic load
-     * random seed
-     */
-
     for (
         run_index = 0;
         run_index < number_of_run_lengths;
@@ -1037,14 +642,6 @@ void run_part1(void)
             load_index++
         )
         {
-            /*
-             * rho = lambda * X
-             *
-             * Therefore:
-             *
-             * lambda = rho / X
-             */
-
             double arrival_rate =
                 traffic_loads[load_index] /
                 SERVICE_TIME;
@@ -1064,10 +661,6 @@ void run_part1(void)
                         arrival_rate,
                         SERVICE_TIME
                     );
-
-                /*
-                 * Save results.
-                 */
 
                 fprintf(
                     file,
@@ -1170,13 +763,6 @@ void run_part1(void)
 
 void run_part2(void)
 {
-    /*
-     * Stable traffic loads.
-     *
-     * These provide points from very low traffic
-     * all the way to near-critical operation.
-     */
-
     const double traffic_loads[] = {
         0.02,
         0.05,
@@ -1195,10 +781,6 @@ void run_part2(void)
 
     const int number_of_loads = 13;
 
-    /*
-     * Use a long run for final performance curves.
-     */
-
     const long int number_to_serve =
         1000000L;
 
@@ -1208,21 +790,11 @@ void run_part2(void)
     int load_index;
     int seed_index;
 
-    /*
-     * Raw results contain one row for every
-     * individual random seed.
-     */
-
     raw_file =
         fopen(
             "part2_raw_results.csv",
             "w"
         );
-
-    /*
-     * Averaged results contain one row for
-     * each arrival rate.
-     */
 
     average_file =
         fopen(
@@ -1290,10 +862,6 @@ void run_part2(void)
     printf("PART 2\n");
     printf("========================================\n\n");
 
-    /*
-     * Run each stable traffic load.
-     */
-
     for (
         load_index = 0;
         load_index < number_of_loads;
@@ -1308,17 +876,12 @@ void run_part2(void)
 
         /*
          * Convert rho to lambda.
-         *
          * rho = lambda * SERVICE_TIME
          */
 
         arrival_rate =
             traffic_loads[load_index] /
             SERVICE_TIME;
-
-        /*
-         * Repeat using several random seeds.
-         */
 
         for (
             seed_index = 0;
@@ -1335,10 +898,6 @@ void run_part2(void)
                     arrival_rate,
                     SERVICE_TIME
                 );
-
-            /*
-             * Save individual run.
-             */
 
             fprintf(
                 raw_file,
@@ -1369,10 +928,6 @@ void run_part2(void)
                 result.mean_delay
             );
 
-            /*
-             * Add to averages.
-             */
-
             sum_utilization +=
                 result.utilization;
 
@@ -1382,10 +937,6 @@ void run_part2(void)
             sum_mean_delay +=
                 result.mean_delay;
         }
-
-        /*
-         * Calculate averages.
-         */
 
         {
             double average_utilization =
@@ -1399,10 +950,6 @@ void run_part2(void)
             double average_mean_delay =
                 sum_mean_delay /
                 NUM_SEEDS;
-
-            /*
-             * Save averaged results.
-             */
 
             fprintf(
                 average_file,
@@ -1486,12 +1033,6 @@ void run_part2(void)
 
 void run_part3(void)
 {
-    /*
-     * Use the same traffic loads as Part 2.
-     *
-     * All are stable because rho < 1.
-     */
-
     const double traffic_loads[] = {
         0.02,
         0.05,
@@ -1510,11 +1051,6 @@ void run_part3(void)
 
     const int number_of_loads = 13;
 
-    /*
-     * Long simulation run for reliable
-     * performance measurements.
-     */
-
     const long int number_to_serve =
         1000000L;
 
@@ -1524,22 +1060,12 @@ void run_part3(void)
     int load_index;
     int seed_index;
 
-    /*
-     * Create CSV containing individual seed runs.
-     */
 
     raw_file =
         fopen(
             "part3_raw_results.csv",
             "w"
         );
-
-    /*
-     * Create CSV containing averaged results.
-     *
-     * This file is the one that should be used
-     * to make the Part 3 graph.
-     */
 
     average_file =
         fopen(
@@ -1570,7 +1096,6 @@ void run_part3(void)
         return;
     }
 
-    /******************************************************************/
     /*
      * Raw results CSV header.
      */
@@ -1616,11 +1141,6 @@ void run_part3(void)
     printf("PART 3 - M/D/1 vs M/M/1\n");
     printf("========================================\n\n");
 
-    /******************************************************************/
-    /*
-     * Run every traffic load.
-     */
-
     for (
         load_index = 0;
         load_index < number_of_loads;
@@ -1628,11 +1148,6 @@ void run_part3(void)
     )
     {
         double arrival_rate;
-
-        /*
-         * Running totals used to average
-         * results across seeds.
-         */
 
         double sum_md1_delay = 0.0;
         double sum_mm1_delay = 0.0;
@@ -1645,20 +1160,13 @@ void run_part3(void)
 
         /*
          * rho = lambda * X
-         *
          * therefore:
-         *
          * lambda = rho / X
          */
 
         arrival_rate =
             traffic_loads[load_index] /
             SERVICE_TIME;
-
-        /**************************************************************/
-        /*
-         * Repeat each arrival rate using all seeds.
-         */
 
         for (
             seed_index = 0;
@@ -1669,10 +1177,6 @@ void run_part3(void)
             SimulationResult md1_result;
             SimulationResult mm1_result;
 
-            /*
-             * Run original M/D/1 simulation.
-             */
-
             md1_result =
                 run_simulation(
                     RANDOM_SEEDS[seed_index],
@@ -1681,10 +1185,6 @@ void run_part3(void)
                     SERVICE_TIME
                 );
 
-            /*
-             * Run modified M/M/1 simulation.
-             */
-
             mm1_result =
                 run_simulation_mm1(
                     RANDOM_SEEDS[seed_index],
@@ -1692,10 +1192,6 @@ void run_part3(void)
                     arrival_rate,
                     SERVICE_TIME
                 );
-
-            /*
-             * Store raw results.
-             */
 
             fprintf(
                 raw_file,
@@ -1735,10 +1231,6 @@ void run_part3(void)
                 mm1_result.mean_number
             );
 
-            /*
-             * Add to totals for averaging.
-             */
-
             sum_md1_delay +=
                 md1_result.mean_delay;
 
@@ -1757,11 +1249,6 @@ void run_part3(void)
             sum_mm1_mean_number +=
                 mm1_result.mean_number;
         }
-
-        /**************************************************************/
-        /*
-         * Calculate averages across seeds.
-         */
 
         {
             double average_md1_delay =
@@ -1862,7 +1349,6 @@ void run_part3(void)
     );
 }
 
-/*******************************************************************************/
 
 /*
  * PART 4
@@ -1892,20 +1378,6 @@ void run_part3(void)
 
 void run_part4(void)
 {
-    /*
-     * Same rho values as Part 3.
-     *
-     * This makes comparison using rho especially easy.
-     *
-     * Since SERVICE_TIME is now 16:
-     *
-     * lambda = rho / 16
-     *
-     * and the new critical arrival rate is:
-     *
-     * lambda_critical = 1 / 16 = 0.0625
-     */
-
     const double traffic_loads[] = {
         0.02,
         0.05,
@@ -1924,10 +1396,6 @@ void run_part4(void)
 
     const int number_of_loads = 13;
 
-    /*
-     * Same long simulation length used in Parts 2 and 3.
-     */
-
     const long int number_to_serve =
         1000000L;
 
@@ -1937,23 +1405,11 @@ void run_part4(void)
     int load_index;
     int seed_index;
 
-    /*
-     * Raw results:
-     *
-     * one row per seed.
-     */
-
     raw_file =
         fopen(
             "part4_raw_results.csv",
             "w"
         );
-
-    /*
-     * Averaged results:
-     *
-     * one row per traffic load.
-     */
 
     average_file =
         fopen(
@@ -1983,8 +1439,6 @@ void run_part4(void)
 
         return;
     }
-
-    /******************************************************************/
 
     /*
      * Raw-results CSV header.
@@ -2046,8 +1500,6 @@ void run_part4(void)
         1.0 / PART4_SERVICE_TIME
     );
 
-    /******************************************************************/
-
     for (
         load_index = 0;
         load_index < number_of_loads;
@@ -2067,23 +1519,13 @@ void run_part4(void)
 
         /*
          * rho = lambda * X
-         *
          * therefore:
-         *
          * lambda = rho / X
-         *
-         * Here X = 16.
          */
 
         arrival_rate =
             traffic_loads[load_index] /
             PART4_SERVICE_TIME;
-
-        /**************************************************************/
-
-        /*
-         * Run each configuration using all random seeds.
-         */
 
         for (
             seed_index = 0;
@@ -2094,10 +1536,6 @@ void run_part4(void)
             SimulationResult md1_result;
             SimulationResult mm1_result;
 
-            /*
-             * M/D/1 with doubled service time.
-             */
-
             md1_result =
                 run_simulation(
                     RANDOM_SEEDS[seed_index],
@@ -2105,10 +1543,6 @@ void run_part4(void)
                     arrival_rate,
                     PART4_SERVICE_TIME
                 );
-
-            /*
-             * M/M/1 with doubled mean service time.
-             */
 
             mm1_result =
                 run_simulation_mm1(
@@ -2160,10 +1594,6 @@ void run_part4(void)
                 mm1_result.utilization
             );
 
-            /*
-             * Add results for averaging.
-             */
-
             sum_md1_delay +=
                 md1_result.mean_delay;
 
@@ -2182,12 +1612,6 @@ void run_part4(void)
             sum_mm1_utilization +=
                 mm1_result.utilization;
         }
-
-        /**************************************************************/
-
-        /*
-         * Average results across seeds.
-         */
 
         {
             double average_md1_delay =
@@ -2342,9 +1766,6 @@ void run_part4(void)
 
 void run_part5(void)
 {
-    /*
-     * Same stable traffic loads used previously.
-     */
 
     const double traffic_loads[] = {
         0.02,
@@ -2364,9 +1785,6 @@ void run_part5(void)
 
     const int number_of_loads = 13;
 
-    /*
-     * Compare both service times used in the lab.
-     */
 
     const double service_times[] = {
         SERVICE_TIME,
@@ -2374,10 +1792,6 @@ void run_part5(void)
     };
 
     const int number_of_service_times = 2;
-
-    /*
-     * Long simulation run for reliable results.
-     */
 
     const long int number_to_serve =
         1000000L;
@@ -2408,8 +1822,6 @@ void run_part5(void)
         return;
     }
 
-    /******************************************************************/
-
     /*
      * CSV header.
      */
@@ -2435,11 +1847,6 @@ void run_part5(void)
     printf("PART 5 - ANALYTICAL COMPARISON\n");
     printf("========================================\n\n");
 
-    /******************************************************************/
-
-    /*
-     * Perform comparison for both service times.
-     */
 
     for (
         service_index = 0;
@@ -2455,9 +1862,6 @@ void run_part5(void)
             service_time
         );
 
-        /*
-         * Run all stable traffic loads.
-         */
 
         for (
             load_index = 0;
@@ -2471,18 +1875,8 @@ void run_part5(void)
             double arrival_rate =
                 rho / service_time;
 
-            /*
-             * Simulation totals used for averaging.
-             */
-
             double sum_md1_delay = 0.0;
             double sum_mm1_delay = 0.0;
-
-            /**********************************************************/
-
-            /*
-             * Run simulations using all random seeds.
-             */
 
             for (
                 seed_index = 0;
@@ -2493,10 +1887,6 @@ void run_part5(void)
                 SimulationResult md1_result;
                 SimulationResult mm1_result;
 
-                /*
-                 * M/D/1 simulation.
-                 */
-
                 md1_result =
                     run_simulation(
                         RANDOM_SEEDS[seed_index],
@@ -2504,10 +1894,6 @@ void run_part5(void)
                         arrival_rate,
                         service_time
                     );
-
-                /*
-                 * M/M/1 simulation.
-                 */
 
                 mm1_result =
                     run_simulation_mm1(
@@ -2517,22 +1903,12 @@ void run_part5(void)
                         service_time
                     );
 
-                /*
-                 * Add delays for averaging.
-                 */
-
                 sum_md1_delay +=
                     md1_result.mean_delay;
 
                 sum_mm1_delay +=
                     mm1_result.mean_delay;
             }
-
-            /**********************************************************/
-
-            /*
-             * Average simulated delays.
-             */
 
             {
                 double simulated_md1_delay =
@@ -2590,12 +1966,6 @@ void run_part5(void)
                     simulated_mm1_delay -
                     theoretical_mm1_delay;
 
-
-                /*
-                 * Convert differences to absolute values
-                 * without requiring another library.
-                 */
-
                 if (md1_difference < 0.0)
                 {
                     md1_difference =
@@ -2623,11 +1993,6 @@ void run_part5(void)
                             theoretical_mm1_delay
                         ) *
                         100.0;
-
-
-                    /*
-                     * Save results.
-                     */
 
                     fprintf(
                         file,
@@ -2666,11 +2031,6 @@ void run_part5(void)
 
                         mm1_percent_error
                     );
-
-
-                    /*
-                     * Print comparison to terminal.
-                     */
 
                     printf(
                         "rho = %.2f | "
@@ -2731,13 +2091,6 @@ void run_part5(void)
 
 void run_part6(void)
 {
-    /*
-     * MAX_QUEUE_SIZE represents the number
-     * of WAITING positions.
-     *
-     * Try several substantially different sizes.
-     */
-
     const int max_queue_sizes[] = {
         1,
         5,
@@ -2746,20 +2099,6 @@ void run_part6(void)
 
     const int number_of_queue_sizes =
         3;
-
-    /*
-     * SERVICE_TIME = 8.
-     *
-     * For the infinite queue:
-     *
-     * lambda_critical = 1/8 = 0.125.
-     *
-     * But Part 6 allows lambda > 0.125.
-     *
-     * We intentionally extend the range far beyond
-     * 0.125 so that rejection probability approaches
-     * its theoretical maximum.
-     */
 
     const double arrival_rates[] = {
         0.001,
@@ -2782,15 +2121,6 @@ void run_part6(void)
     const int number_of_arrival_rates =
         15;
 
-    /*
-     * Part 6 does not prescribe a specific
-     * NUMBER_TO_SERVE.
-     *
-     * 100,000 provides reliable averages without
-     * making the very high-arrival-rate runs
-     * unnecessarily slow.
-     */
-
     const long int number_to_serve =
         100000L;
 
@@ -2800,8 +2130,6 @@ void run_part6(void)
     int queue_index;
     int rate_index;
     int seed_index;
-
-    /******************************************************************/
 
     raw_file =
         fopen(
@@ -2846,7 +2174,6 @@ void run_part6(void)
         return;
     }
 
-    /******************************************************************/
 
     /*
      * Raw CSV.
@@ -2924,21 +2251,6 @@ void run_part6(void)
                 queue_index
             ];
 
-        /*
-         * Theoretical maximum delay:
-         *
-         * If K customers may wait, an accepted customer
-         * can arrive when:
-         *
-         *      one customer is in service
-         *      K-1 are already waiting
-         *
-         * They become the Kth waiting customer.
-         *
-         * Maximum total delay is therefore:
-         *
-         *      (K + 1) * SERVICE_TIME
-         */
 
         double theoretical_max_delay =
             (
@@ -2954,8 +2266,6 @@ void run_part6(void)
 
             theoretical_max_delay
         );
-
-        /**************************************************************/
 
         /*
          * Loop through arrival rates.
@@ -2973,11 +2283,6 @@ void run_part6(void)
                     rate_index
                 ];
 
-            /*
-             * rho is still useful as offered traffic,
-             * even though rho > 1 is now allowed.
-             */
-
             double rho =
                 arrival_rate *
                 SERVICE_TIME;
@@ -2993,8 +2298,6 @@ void run_part6(void)
 
             double sum_utilization =
                 0.0;
-
-            /**********************************************************/
 
             /*
              * Repeat using all five seeds.
@@ -3090,11 +2393,6 @@ void run_part6(void)
                     result.utilization;
             }
 
-            /**********************************************************/
-
-            /*
-             * Average over seeds.
-             */
 
             {
                 double average_mean_delay =
@@ -3112,10 +2410,6 @@ void run_part6(void)
                 double average_utilization =
                     sum_utilization /
                     NUM_SEEDS;
-
-                /*
-                 * Write averaged results.
-                 */
 
                 fprintf(
                     average_file,
@@ -3158,9 +2452,6 @@ void run_part6(void)
                     1.0
                 );
 
-                /*
-                 * Terminal output.
-                 */
 
                 printf(
                     "K = %-2d | "
